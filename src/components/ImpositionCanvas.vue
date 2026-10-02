@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
-import type { Position, Validation } from '../stores/imposition'
+import { computed, onMounted, ref, watch } from 'vue'
+import type { Page, Position, SheetSpec, Validation } from '../stores/imposition'
 
 const props = defineProps<{
   positions: Position[]
+  pages: Page[]
+  spec: SheetSpec
   side: 'front' | 'back'
   zoom: number
   selected: string | null
@@ -19,112 +21,184 @@ const canvas = ref<HTMLCanvasElement | null>(null)
 const dragging = ref<string | null>(null)
 const dragOffset = ref({ x: 0, y: 0 })
 
+const CANVAS_WIDTH = 800
+const scale = computed(() => 752 / props.spec.width)
+const sheetH = computed(() => props.spec.height * scale.value)
+const canvasHeight = computed(() => Math.round(48 + sheetH.value))
+
+function footprint(position: Position) {
+  const page = props.pages.find((item) => item.pageNo === position.pageNo)
+  const w = (page?.width ?? 210) + props.spec.bleed * 2
+  const h = (page?.height ?? 297) + props.spec.bleed * 2
+  return position.rotation % 180 !== 0 ? { w: h, h: w } : { w, h }
+}
+
 function draw() {
   const element = canvas.value
   if (!element) return
   const ctx = element.getContext('2d')
   if (!ctx) return
-  const width = 800
-  const height = 1120
-  ctx.clearRect(0, 0, width, height)
+  const s = scale.value
+  const spec = props.spec
+  element.height = canvasHeight.value
+  ctx.clearRect(0, 0, CANVAS_WIDTH, canvasHeight.value)
   ctx.fillStyle = '#d7dddf'
-  ctx.fillRect(0, 0, width, height)
+  ctx.fillRect(0, 0, CANVAS_WIDTH, canvasHeight.value)
   ctx.shadowColor = 'rgba(23,45,54,.22)'
   ctx.shadowBlur = 18
   ctx.fillStyle = '#fffefb'
-  ctx.fillRect(24, 24, 752, 1072)
+  ctx.fillRect(24, 24, 752, sheetH.value)
   ctx.shadowBlur = 0
+
+  // 纸纹方向参考线
+  ctx.save()
+  ctx.beginPath()
+  ctx.rect(24, 24, 752, sheetH.value)
+  ctx.clip()
+  ctx.strokeStyle = 'rgba(90,120,128,.10)'
+  ctx.lineWidth = 6
+  const step = 46
+  if (spec.grain === '纵向') {
+    for (let x = 24 + step; x < 776; x += step) {
+      ctx.beginPath()
+      ctx.moveTo(x, 24)
+      ctx.lineTo(x, 24 + sheetH.value)
+      ctx.stroke()
+    }
+  } else {
+    for (let y = 24 + step; y < 24 + sheetH.value; y += step) {
+      ctx.beginPath()
+      ctx.moveTo(24, y)
+      ctx.lineTo(776, y)
+      ctx.stroke()
+    }
+  }
+  ctx.restore()
+
+  // 安全区
   ctx.strokeStyle = '#b8c3c6'
   ctx.setLineDash([5, 5])
-  ctx.strokeRect(42, 42, 716, 1036)
+  ctx.strokeRect(24 + spec.safe * s, 24 + spec.safe * s, 752 - spec.safe * 2 * s, sheetH.value - spec.safe * 2 * s)
   ctx.setLineDash([])
-  ctx.fillStyle = '#e69a4b'
-  ctx.fillRect(52, 1060, 696, 12)
+
+  // 色彩控制条
+  const barY = 24 + sheetH.value - 20
+  const barWidth = 752 - 36
   for (let index = 0; index < 7; index += 1) {
     ctx.fillStyle = ['#28a4d8', '#ef3b9b', '#f4d62c', '#1a1a1a', '#30c3aa', '#ef4c36', '#5c67cd'][index]
-    ctx.fillRect(52 + index * 99, 1060, 99, 12)
+    ctx.fillRect(42 + index * (barWidth / 7), barY, barWidth / 7, 12)
   }
+
   ctx.fillStyle = '#26373d'
   ctx.font = 'bold 15px sans-serif'
   ctx.fillText(`${props.side === 'front' ? '正面' : '反面'}拼版版式`, 48, 28)
   ctx.font = '11px sans-serif'
   ctx.fillStyle = '#76848a'
-  ctx.fillText(`纸张 720 × 1020 mm · 出血 3mm · 安全区 5mm · 骑马订`, 180, 28)
+  ctx.fillText(`纸张 ${spec.width} × ${spec.height} mm · 出血 ${spec.bleed}mm · 安全区 ${spec.safe}mm · ${spec.binding} · 纸纹${spec.grain}`, 180, 28)
 
   props.positions.filter((item) => item.front === (props.side === 'front')).forEach((position) => {
-    const x = position.x
-    const y = position.y + 20
-    const pageWidth = 300
-    const pageHeight = 410
+    const box = footprint(position)
+    const drawW = box.w * s
+    const drawH = box.h * s
+    const px = 24 + position.x * s
+    const py = 24 + position.y * s
     const hasIssue = props.validations.some((issue) => issue.pageNo === position.pageNo)
     ctx.save()
-    ctx.translate(x + pageWidth / 2, y + pageHeight / 2)
+    ctx.translate(px + drawW / 2, py + drawH / 2)
     ctx.rotate((position.rotation * Math.PI) / 180)
-    ctx.translate(-pageWidth / 2, -pageHeight / 2)
+    const fw = (position.rotation % 180 !== 0 ? box.h : box.w) * s
+    const fh = (position.rotation % 180 !== 0 ? box.w : box.h) * s
+    ctx.translate(-fw / 2, -fh / 2)
     if (position.id === props.selected) {
       ctx.shadowColor = 'rgba(31,113,123,.35)'
       ctx.shadowBlur = 14
     }
     ctx.fillStyle = '#f7f7f2'
-    ctx.fillRect(0, 0, pageWidth, pageHeight)
+    ctx.fillRect(0, 0, fw, fh)
     ctx.shadowBlur = 0
     ctx.strokeStyle = hasIssue ? '#c64f35' : '#647c82'
     ctx.lineWidth = position.id === props.selected ? 3 : 1.5
-    ctx.strokeRect(0, 0, pageWidth, pageHeight)
+    ctx.strokeRect(0, 0, fw, fh)
+    // 出血框
     ctx.strokeStyle = '#df7654'
     ctx.setLineDash([7, 5])
-    ctx.strokeRect(-8, -8, pageWidth + 16, pageHeight + 16)
+    const bleed = spec.bleed * s
+    ctx.strokeRect(-bleed, -bleed, fw + bleed * 2, fh + bleed * 2)
+    // 安全区框
     ctx.setLineDash([4, 4])
     ctx.strokeStyle = '#5a9d9b'
-    ctx.strokeRect(14, 14, pageWidth - 28, pageHeight - 28)
+    const safe = spec.safe * s
+    ctx.strokeRect(safe, safe, fw - safe * 2, fh - safe * 2)
     ctx.setLineDash([])
     ctx.fillStyle = 'rgba(48,110,115,.08)'
-    ctx.fillRect(18, 18, pageWidth - 36, pageHeight - 36)
+    ctx.fillRect(safe + 4, safe + 4, fw - safe * 2 - 8, fh - safe * 2 - 8)
     ctx.fillStyle = '#31474e'
     ctx.font = 'bold 18px sans-serif'
     ctx.textAlign = 'center'
-    ctx.fillText(`P${position.pageNo}`, pageWidth / 2, pageHeight / 2 - 10)
+    ctx.fillText(`P${position.pageNo}`, fw / 2, fh / 2 - 6)
     ctx.font = '11px sans-serif'
     ctx.fillStyle = '#718187'
-    ctx.fillText(position.rotation ? `旋转 ${position.rotation}°` : '方向 0°', pageWidth / 2, pageHeight / 2 + 14)
+    ctx.fillText(position.rotation ? `旋转 ${position.rotation}°` : '方向 0°', fw / 2, fh / 2 + 16)
     ctx.restore()
   })
 }
 
+function toSheet(event: PointerEvent) {
+  const element = canvas.value
+  if (!element) return null
+  const rect = element.getBoundingClientRect()
+  return {
+    x: ((event.clientX - rect.left) / rect.width) * CANVAS_WIDTH,
+    y: ((event.clientY - rect.top) / rect.height) * canvasHeight.value,
+  }
+}
+
 function pointerDown(event: PointerEvent) {
   const canvasElement = canvas.value
-  if (!canvasElement) return
-  const rect = canvasElement.getBoundingClientRect()
-  const x = ((event.clientX - rect.left) / rect.width) * 800
-  const y = ((event.clientY - rect.top) / rect.height) * 1120 - 20
+  const point = toSheet(event)
+  if (!canvasElement || !point) return
+  const s = scale.value
   const hit = props.positions
     .filter((item) => item.front === (props.side === 'front'))
-    .find((item) => x >= item.x && x <= item.x + 300 && y >= item.y && y <= item.y + 410)
+    .find((item) => {
+      const box = footprint(item)
+      const px = 24 + item.x * s
+      const py = 24 + item.y * s
+      return point.x >= px && point.x <= px + box.w * s && point.y >= py && point.y <= py + box.h * s
+    })
   if (!hit) return
   dragging.value = hit.id
-  dragOffset.value = { x: x - hit.x, y: y - hit.y }
+  dragOffset.value = { x: point.x - (24 + hit.x * s), y: point.y - (24 + hit.y * s) }
   emit('select', hit.id)
   canvasElement.setPointerCapture(event.pointerId)
 }
 
 function pointerMove(event: PointerEvent) {
-  if (!dragging.value || !canvas.value) return
-  const rect = canvas.value.getBoundingClientRect()
-  const x = ((event.clientX - rect.left) / rect.width) * 800 - dragOffset.value.x
-  const y = ((event.clientY - rect.top) / rect.height) * 1120 - 20 - dragOffset.value.y
-  emit('update', dragging.value, { x: Math.max(28, Math.min(470, Math.round(x))), y: Math.max(24, Math.min(580, Math.round(y))) })
+  if (!dragging.value) return
+  const point = toSheet(event)
+  if (!point) return
+  const s = scale.value
+  const position = props.positions.find((item) => item.id === dragging.value)
+  if (!position) return
+  const box = footprint(position)
+  const x = (point.x - 24 - dragOffset.value.x) / s
+  const y = (point.y - 24 - dragOffset.value.y) / s
+  emit('update', dragging.value, {
+    x: Math.max(0, Math.min(props.spec.width - box.w, Math.round(x))),
+    y: Math.max(0, Math.min(props.spec.height - box.h, Math.round(y))),
+  })
 }
 
 onMounted(draw)
-watch(() => [props.positions, props.side, props.selected, props.validations], draw, { deep: true })
+watch(() => [props.positions, props.side, props.selected, props.validations, props.spec], draw, { deep: true })
 </script>
 
 <template>
   <div class="canvas-wrap" :style="{ width: `${Math.round(800 * zoom / 100)}px` }">
     <canvas
       ref="canvas"
-      width="800"
-      height="1120"
+      :width="800"
+      :height="canvasHeight"
       @pointerdown="pointerDown"
       @pointermove="pointerMove"
       @pointerup="dragging = null"

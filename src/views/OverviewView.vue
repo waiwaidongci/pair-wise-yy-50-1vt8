@@ -30,8 +30,8 @@ const pendingProof = computed(() => store.proofs.find((proof) => proof.decision 
         <div class="project-card">
           <div>
             <strong>《潮汐来信》上海巡演节目册</strong>
-            <p>成品 210 × 297mm · 8P · 骑马订 · 720 × 1020mm 对开纸</p>
-            <div class="specs"><span>CMYK + 专色</span><span>纵向纸纹</span><span>PDF/X-4</span><span>色彩控制条已配置</span></div>
+            <p>成品 210 × 297mm · 8P · 骑马订 · {{ store.sheetSpec.width }} × {{ store.sheetSpec.height }}mm 对开纸</p>
+            <div class="specs"><span>CMYK + 专色</span><span>{{ store.sheetSpec.grain }}纸纹</span><span>PDF/X-4</span><span>色彩控制条已配置</span><span v-if="store.paperQueue.length" class="queued">{{ store.paperQueue.length }} 页排队等纸面</span></div>
           </div>
           <Button label="打开拼版" icon="pi pi-arrow-right" @click="$router.push('/imposition')" />
         </div>
@@ -77,6 +77,7 @@ const pendingProof = computed(() => store.proofs.find((proof) => proof.decision 
 .project-card p { margin: 7px 0 14px; color: #66757c; }
 .specs { display: flex; flex-wrap: wrap; gap: 7px; }
 .specs span { padding: 5px 8px; border-radius: 5px; color: #45676d; background: #eef4f4; font-size: 10px; }
+.specs span.queued { color: #8a5a1d; background: #fdf0dd; }
 .checklist { padding: 0 18px 16px; }
 .checklist > div { display: grid; grid-template-columns: 24px 1fr auto; align-items: center; gap: 9px; padding: 11px 0; border-top: 1px solid #ecf0f0; font-size: 12px; }
 .checklist i { color: #3b8a67; }

@@ -6,6 +6,7 @@ import InputNumber from 'primevue/inputnumber'
 import Textarea from 'primevue/textarea'
 import Select from 'primevue/select'
 import Tag from 'primevue/tag'
+import Message from 'primevue/message'
 import { useImpositionStore, type Proof } from '../stores/imposition'
 
 const store = useImpositionStore()
@@ -14,15 +15,28 @@ const draft = ref<Proof>({ ...active.value })
 watch(active, (value) => (draft.value = { ...value }), { immediate: true })
 const sampleFile = ref('当前使用数字样张 v2_09025.tif')
 
+const invalidPages = computed(() => (active.value ? (store.proofInvalidations[active.value.id] ?? []) : []))
+const invalidated = computed(() => invalidPages.value.length > 0)
+
+function decisionTag(proof: Proof) {
+  if (store.proofInvalidations[proof.id]?.length) return { value: '已失效', severity: 'danger' as const }
+  return { value: proof.decision, severity: proof.decision === '通过' ? ('success' as const) : proof.decision === '退回' ? ('danger' as const) : ('warn' as const) }
+}
+
 function save() {
   store.updateProof(draft.value.id, draft.value)
+}
+
+function reconfirm() {
+  store.reconfirmProof(draft.value.id)
+  draft.value = { ...active.value }
 }
 </script>
 
 <template>
   <section class="page">
     <div class="page-head">
-      <div><p class="eyebrow">PROOFING / 打样审批</p><h1>打样轮次与色彩反馈</h1><p class="muted">每轮记录样张、色差、修正说明与负责人决定，修改后生成新拼版版本。</p></div>
+      <div><p class="eyebrow">PROOFING / 打样审批</p><h1>打样轮次与色彩反馈</h1><p class="muted">每轮记录样张、色差、修正说明与负责人决定。已通过轮次的版位、旋转或出血一旦变动，结论自动失效并需重新确认。</p></div>
       <Button label="新建打样轮次" icon="pi pi-plus" @click="store.createProof" />
     </div>
 
@@ -33,14 +47,20 @@ function save() {
           <button v-for="proof in store.proofs.slice().reverse()" :key="proof.id" :class="{ active: proof.id === store.selectedProof }" @click="store.selectedProof = proof.id">
             <div><strong>第 {{ proof.round }} 轮 · {{ proof.sample }}</strong><small>{{ proof.date }} · {{ proof.owner }}</small></div>
             <span>ΔE {{ proof.deltaE }}</span>
-            <Tag :value="proof.decision" :severity="proof.decision === '通过' ? 'success' : proof.decision === '退回' ? 'danger' : 'warn'" />
+            <Tag :value="decisionTag(proof).value" :severity="decisionTag(proof).severity" />
           </button>
         </div>
       </section>
 
       <section class="panel proof-editor">
-        <div class="panel-head"><h3>{{ draft.id }} · 第 {{ draft.round }} 轮打样记录</h3><Tag :value="draft.decision" :severity="draft.decision === '通过' ? 'success' : draft.decision === '退回' ? 'danger' : 'warn'" /></div>
+        <div class="panel-head"><h3>{{ draft.id }} · 第 {{ draft.round }} 轮打样记录</h3><Tag :value="decisionTag(active).value" :severity="decisionTag(active).severity" /></div>
         <div v-if="active" class="proof-body">
+          <Message v-if="invalidated" severity="error" :closable="false">
+            <div class="invalid-box">
+              <span>以下页面的位置、旋转或出血已变动，本轮「通过」结论失效：{{ invalidPages.map((pageNo) => `P${pageNo}`).join('、') }}。请核对当前版位后重新确认。</span>
+              <Button label="重新确认打样结论" icon="pi pi-check" size="small" severity="danger" @click="reconfirm" />
+            </div>
+          </Message>
           <div class="sample-preview">
             <div class="print-sample"><span>P1 / P8</span><strong>潮汐来信</strong><i>数字样张色靶</i></div>
             <div>
@@ -86,6 +106,7 @@ function save() {
 .proof-list small { margin-top: 4px; color: #7a878e; font-size: 10px; }
 .proof-list > button > span { color: #506f75; font-family: monospace; font-weight: 700; }
 .proof-body { display: grid; gap: 15px; padding: 18px; }
+.invalid-box { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .sample-preview { display: grid; grid-template-columns: 190px 1fr; gap: 16px; align-items: center; padding: 14px; background: #f4f6f5; }
 .print-sample { position: relative; display: grid; width: 150px; aspect-ratio: .72; place-items: center; padding: 12px; color: #dce9e8; background: linear-gradient(145deg,#173a4a,#306a6d); box-shadow: 0 8px 18px rgba(29,54,62,.18); }
 .print-sample span { position: absolute; top: 8px; left: 9px; font-size: 9px; }
