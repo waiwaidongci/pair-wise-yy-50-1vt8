@@ -30,8 +30,8 @@ const pendingProof = computed(() => store.proofs.find((proof) => proof.decision 
         <div class="project-card">
           <div>
             <strong>《潮汐来信》上海巡演节目册</strong>
-            <p>成品 210 × 297mm · 8P · 骑马订 · 720 × 1020mm 对开纸</p>
-            <div class="specs"><span>CMYK + 专色</span><span>纵向纸纹</span><span>PDF/X-4</span><span>色彩控制条已配置</span></div>
+            <p>成品 210 × 297mm · 8P · 骑马订 · {{ store.sheetSpec.width }} × {{ store.sheetSpec.height }}mm{{ store.sheetSpec.width < 720 ? '（换纸后窄幅）' : '' }}</p>
+            <div class="specs"><span>CMYK + 专色</span><span>{{ store.sheetSpec.grain }}纸纹</span><span>出血 {{ store.sheetSpec.bleed }}mm</span><span>安全区 {{ store.sheetSpec.safe }}mm</span><span>PDF/X-4</span><span>色彩控制条已配置</span></div>
           </div>
           <Button label="打开拼版" icon="pi pi-arrow-right" @click="$router.push('/imposition')" />
         </div>
@@ -50,7 +50,8 @@ const pendingProof = computed(() => store.proofs.find((proof) => proof.decision 
             <template v-for="proof in store.proofs.slice().reverse()" :key="proof.id">
               <div class="proof-row">
                 <div><strong>第 {{ proof.round }} 轮 · {{ proof.sample }}</strong><small>{{ proof.date }} · ΔE {{ proof.deltaE }}</small></div>
-                <Tag :value="proof.decision" :severity="proof.decision === '通过' ? 'success' : proof.decision === '退回' ? 'danger' : 'warn'" />
+                <Tag v-if="proof.invalid" value="已失效" severity="danger" />
+                <Tag v-else :value="proof.decision" :severity="proof.decision === '通过' ? 'success' : proof.decision === '退回' ? 'danger' : 'warn'" />
               </div>
             </template>
           </div>

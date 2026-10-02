@@ -6,6 +6,7 @@ import InputNumber from 'primevue/inputnumber'
 import Textarea from 'primevue/textarea'
 import Select from 'primevue/select'
 import Tag from 'primevue/tag'
+import Message from 'primevue/message'
 import { useImpositionStore, type Proof } from '../stores/imposition'
 
 const store = useImpositionStore()
@@ -16,6 +17,12 @@ const sampleFile = ref('当前使用数字样张 v2_09025.tif')
 
 function save() {
   store.updateProof(draft.value.id, draft.value)
+}
+
+function reconfirm(id: string) {
+  store.reconfirmProof(id)
+  const updated = store.proofs.find((proof) => proof.id === id)
+  if (updated) draft.value = { ...updated }
 }
 </script>
 
@@ -33,7 +40,8 @@ function save() {
           <button v-for="proof in store.proofs.slice().reverse()" :key="proof.id" :class="{ active: proof.id === store.selectedProof }" @click="store.selectedProof = proof.id">
             <div><strong>第 {{ proof.round }} 轮 · {{ proof.sample }}</strong><small>{{ proof.date }} · {{ proof.owner }}</small></div>
             <span>ΔE {{ proof.deltaE }}</span>
-            <Tag :value="proof.decision" :severity="proof.decision === '通过' ? 'success' : proof.decision === '退回' ? 'danger' : 'warn'" />
+            <Tag v-if="proof.invalid" value="已失效" severity="danger" />
+            <Tag v-else :value="proof.decision" :severity="proof.decision === '通过' ? 'success' : proof.decision === '退回' ? 'danger' : 'warn'" />
           </button>
         </div>
       </section>
@@ -41,6 +49,15 @@ function save() {
       <section class="panel proof-editor">
         <div class="panel-head"><h3>{{ draft.id }} · 第 {{ draft.round }} 轮打样记录</h3><Tag :value="draft.decision" :severity="draft.decision === '通过' ? 'success' : draft.decision === '退回' ? 'danger' : 'warn'" /></div>
         <div v-if="active" class="proof-body">
+          <Message v-if="draft.invalid" severity="error" :closable="false" class="invalid-banner">
+            <template #default>
+              <strong>打样结论已失效：</strong>{{ draft.invalidReason }}
+              <div class="invalid-actions">
+                <span>涉及页面 P{{ draft.pages.join('、P') }}。拼版位置/旋转/出血变更后，原「通过」结论不再有效，需重新打样确认。</span>
+                <Button label="我已复核，重新确认" icon="pi pi-check-circle" size="small" @click="reconfirm(draft.id)" />
+              </div>
+            </template>
+          </Message>
           <div class="sample-preview">
             <div class="print-sample"><span>P1 / P8</span><strong>潮汐来信</strong><i>数字样张色靶</i></div>
             <div>
@@ -86,6 +103,9 @@ function save() {
 .proof-list small { margin-top: 4px; color: #7a878e; font-size: 10px; }
 .proof-list > button > span { color: #506f75; font-family: monospace; font-weight: 700; }
 .proof-body { display: grid; gap: 15px; padding: 18px; }
+.invalid-banner :deep(.p-message-content) { display: grid; gap: 8px; }
+.invalid-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.invalid-actions span { font-weight: 400; }
 .sample-preview { display: grid; grid-template-columns: 190px 1fr; gap: 16px; align-items: center; padding: 14px; background: #f4f6f5; }
 .print-sample { position: relative; display: grid; width: 150px; aspect-ratio: .72; place-items: center; padding: 12px; color: #dce9e8; background: linear-gradient(145deg,#173a4a,#306a6d); box-shadow: 0 8px 18px rgba(29,54,62,.18); }
 .print-sample span { position: absolute; top: 8px; left: 9px; font-size: 9px; }
